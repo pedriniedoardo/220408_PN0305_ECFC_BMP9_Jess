@@ -1,3 +1,6 @@
+# AIM ---------------------------------------------------------------------
+# build the signature object for the targeted analysis by GSEA
+
 # libraries ---------------------------------------------------------------
 library(tidyverse)
 library(GSEABase)
@@ -59,7 +62,7 @@ pathways_txt2 <- lapply(file_txt2, function(x){
 
 pathways_csv_all <- read_csv("../../data/signatures/marker_vs_all.csv") %>%
   mutate(Cell_Type = str_remove_all(Cell_Type,pattern = "BEC, ")) %>%
-  filter(Cell_Type %in% c("Arterial","Capillary","Venous")) %>%
+  dplyr::filter(Cell_Type %in% c("Arterial","Capillary","Venous")) %>%
   mutate(Cell_Type = paste0(Cell_Type,"_vs_all")) %>%
   split(f = .$Cell_Type) %>%
   map(function(x){

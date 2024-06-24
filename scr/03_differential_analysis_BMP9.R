@@ -1,28 +1,49 @@
+# AIM ---------------------------------------------------------------------
+# run DE analysis
+
 # libraries ---------------------------------------------------------------
-source(file = "scr/00_library.R")
+library(tidyverse)
+library(DESeq2)
+library(ggrepel)
+library(limma)
+library(ComplexHeatmap)
+library(ashr)
+library(AnnotationDbi)
+library(AnnotationHub)
+
+# annotation object -------------------------------------------------------
+ah <- AnnotationHub()
+ah
+
+#query the database to identify the version of interest
+query(ah, pattern = c("Homo Sapiens", "EnsDb"))
+
+# copy the specific code ofr the database of interest
+edb <- ah[["AH116291"]]
+columns(edb)
 
 # read in the data --------------------------------------------------------
-# ddsHTSeq <- readRDS("../../out/object/ddsHTSeq_BMP9.rds")
-design <- readRDS("../../out/object/design_BMP9.rds")
-vds_filter <- readRDS("../../out/object/vds_filter.rds")
+# read in the biotype annotation
+LUT_gene <- read_tsv("../../out/table/df_LUT_gtf_genes.tsv") %>% 
+  mutate(transcript_id=gene_ids) %>% 
+  separate(transcript_id,into = c("gene_id","version"),remove = F,sep = "\\.") %>% 
+  dplyr::select(-c(version,gene_ids))
 
-# Pre-filtering -----------------------------------------------------------
-# While it is not necessary to pre-filter low count genes before running the DESeq2 functions, there are two reasons which make pre-filtering useful: by removing rows in which there are very few reads, we reduce the memory size of the dds data object, and we increase the speed of the transformation and testing functions within DESeq2. Here we perform a minimal pre-filtering to keep only rows that have at least 11 reads total.
+ddsHTSeq_filter <- readRDS("../../out/object/dds_all_filter.rds")
+design <- readRDS("../../out/object/design_all.rds")
+vds_filter <- readRDS("../../out/object/vds_all_filter.rds")
 
-# keep <- rowSums(counts(ddsHTSeq)) >= 11
-# table(keep)
-# ddsHTSeq_filter <- ddsHTSeq[keep,]
+LUT_sample <- colData(ddsHTSeq_filter) %>% 
+  data.frame()
 
 # differential expression analyisis ---------------------------------------
-# ddsHTSeq_filter <- DESeq(ddsHTSeq_filter)
-# # if needed is possible to check the distributions of the counts before and after the normalizatoin
-# # boxplot(log(counts(ddsHTSeq_structure,normalized = T)))
-# # boxplot(log(counts(ddsHTSeq_structure,normalized = F)))
-# #
-# # save the filtered object
-# saveRDS(ddsHTSeq_filter,"../../out/object/ddsHTSeq_filter.rds")
-#
-ddsHTSeq_filter <- readRDS("../../out/object/ddsHTSeq_filter.rds")
+ddsHTSeq_filter <- DESeq(ddsHTSeq_filter)
+# if needed is possible to check the distributions of the counts before and after the normalizatoin
+# boxplot(log(counts(ddsHTSeq_structure,normalized = T)))
+# boxplot(log(counts(ddsHTSeq_structure,normalized = F)))
+
+# save the filtered object
+saveRDS(ddsHTSeq_filter,"../../out/object/dds_all_filter_DESeq.rds")
 
 # print the contrast
 resultsNames(ddsHTSeq_filter)
@@ -44,17 +65,7 @@ list_df <-
       rownames_to_column(var = "symbol") %>%
       arrange(pvalue) %>%
       # add the symbol
-      mutate(ensembl = mapIds(org.Hs.eg.db,
-                             keys = symbol,
-                             column = "ENSEMBL",
-                             keytype = "SYMBOL",
-                             multiVals = "first")) %>%
-      mutate(entrez = mapIds(org.Hs.eg.db,
-                             keys = symbol,
-                             column="ENTREZID",
-                             keytype="SYMBOL",
-                             multiVals="first"))
-    
+      left_join(LUT_gene,by = c("symbol" = "gene_name"))
     df
   })
 
@@ -79,17 +90,8 @@ list_df_shr <-
       rownames_to_column(var = "symbol") %>%
       arrange(pvalue) %>%
       # add the symbol
-      mutate(ensembl = mapIds(org.Hs.eg.db,
-                              keys = symbol,
-                              column = "ENSEMBL",
-                              keytype = "SYMBOL",
-                              multiVals = "first")) %>%
-      mutate(entrez = mapIds(org.Hs.eg.db,
-                             keys = symbol,
-                             column="ENTREZID",
-                             keytype="SYMBOL",
-                             multiVals="first"))
-    
+      # add the symbol
+      left_join(LUT_gene,by = c("symbol" = "gene_name"))
     df
   })
 
@@ -103,17 +105,18 @@ pmap(list(list_df_shr,names(list_df_shr)),function(x,y){
 # Another useful diagnostic plot is the histogram of the p values (figure below). This plot is best formed by excluding genes with very small counts, which otherwise generate spikes in the histogram.
 list_df$BMP9_vs_Mock %>%
   data.frame()%>%
-  filter(baseMean>1)%>%
+  dplyr::filter(baseMean>1)%>%
   ggplot(aes(x=pvalue))+geom_histogram(breaks = 0:20/20) +
   theme_bw()
-ggsave("../../out/image/histogram_pvalue_BMP9.pdf",width = 4,height = 3)
+ggsave("../../out/plot/histogram_pvalue_BMP9.pdf",width = 4,height = 3)
 
 # PLOTTING RESULTS --------------------------------------------------------
 # add the info of the genename
 test_plot <- list_df$BMP9_vs_Mock%>%
   data.frame()%>%
   # add a clor variable in case significant
-  mutate(col=ifelse(((padj<0.05)&abs(log2FoldChange)>1&!is.na(symbol)),yes = 1,no = 0))
+  mutate(col=ifelse(((padj<0.05)&abs(log2FoldChange)>1&!is.na(symbol)),yes = 1,no = 0)) %>%
+  dplyr::filter(!is.na(col))
 
 test_plot %>%
   ggplot(aes(x=log2FoldChange,y=-log(padj)))+
@@ -131,12 +134,13 @@ test_plot %>%
     point.padding = unit(0.3, "lines")) +
   theme_bw() +
   theme(legend.position = "none")
-ggsave("../../out/image/vulcano_plot_text_BMP9.pdf",width = 12,height = 12)
+ggsave("../../out/plot/vulcano_plot_text_BMP9.pdf",width = 12,height = 12)
 #
 test_plot_shr <- list_df_shr$BMP9_vs_Mock_shr%>%
   data.frame()%>%
   # add a clor variable in case significant
-  mutate(col=ifelse(((padj<0.05)&abs(log2FoldChange)>1&!is.na(symbol)),yes = 1,no = 0))
+  mutate(col=ifelse(((padj<0.05)&abs(log2FoldChange)>1&!is.na(symbol)),yes = 1,no = 0)) %>%
+  dplyr::filter(!is.na(col))
 
 test_plot_shr %>%
   ggplot(aes(x=log2FoldChange,y=-log(padj)))+
@@ -154,7 +158,7 @@ test_plot_shr %>%
     point.padding = unit(0.3, "lines")) +
   theme_bw() +
   theme(legend.position = "none")
-ggsave("../../out/image/vulcano_plot_text_BMP9_shr.pdf",width = 12,height = 12)
+ggsave("../../out/plot/vulcano_plot_text_BMP9_shr.pdf",width = 12,height = 12)
 
 # plotMA(res, ylim = c(-5, 5))
 list_df$BMP9_vs_Mock %>%
@@ -164,7 +168,7 @@ list_df$BMP9_vs_Mock %>%
   ggplot(aes(baseMean,y = log2FoldChange,col=color)) + geom_point(alpha=0.2) + 
   scale_x_log10() + scale_color_manual(values = c("gray","red")) + theme_bw() + 
   theme(legend.position = "none")
-ggsave("../../out/image/MA_plot_BMP9.pdf",width = 4,height = 3)
+ggsave("../../out/plot/MA_plot_BMP9.pdf",width = 4,height = 3)
 
 # using the shrinked values
 list_df_shr$BMP9_vs_Mock_shr %>%
@@ -176,14 +180,14 @@ list_df_shr$BMP9_vs_Mock_shr %>%
   scale_color_manual(values = c("gray","red")) + 
   theme_bw() +
   theme(legend.position = "none")
-ggsave("../../out/image/MA_plot_shr_BMP9.pdf",width = 4,height = 3)
+ggsave("../../out/plot/MA_plot_shr_BMP9.pdf",width = 4,height = 3)
 
 # the DEGs plot stringent
 DEG_1 <- list_df$BMP9_vs_Mock %>%
   data.frame()%>%
   # add a clor variable in case significant
   mutate(col=ifelse(((padj<0.05)&abs(log2FoldChange)>1),yes = 1,no = 0)) %>%
-  filter(col==1) %>%
+  dplyr::filter(col==1) %>%
   pull(symbol)
 
 mat_filter <- assay(vds_filter) %>%
@@ -195,20 +199,28 @@ mat <- mat_filter[rownames(vds_filter) %in% DEG_1, ]
 mat2 <- (mat - rowMeans(mat))/rowSds(mat)
 #
 
-sample_ordered <- str_extract(colnames(mat2),pattern = "BMP9|mock")
-column_ha <- HeatmapAnnotation(treat = sample_ordered,  
-                               col = list(treat = c("mock" = "green", "BMP9" = "gray"))) 
+sample_ordered <- data.frame(sample = colnames(mat2)) %>%
+  left_join(ddsHTSeq_filter@colData %>%
+              data.frame(),by="sample")
+
+# update the column name of the matrix
+colnames(mat2) <- sample_ordered$sample_name
+
+column_ha <- HeatmapAnnotation(treat = sample_ordered$treat,
+                               gender = sample_ordered$gender,
+                               col = list(treat = c("mock" = "gray", "BMP9" = "black"),
+                                          gender = c("M" = "blue", "F" = "pink"))) 
 
 ht2 <- Heatmap(mat2, 
                name = "exp", 
                column_title = "BMP9",
                row_names_gp = gpar(fontsize = 3),
-               top_annotation = column_ha, 
+               top_annotation = column_ha, show_row_names = F
                # cluster_rows = F, 
                # right_annotation = row_ha, 
                # row_split = rep(c(1,2,3,4),c(2,3,4,7))
                ) 
-pdf("../../out/image/heatmap_BMP9_DEG.pdf",width = 4,height = 15) 
+pdf("../../out/plot/heatmap_BMP9_DEG.pdf",width = 4,height = 7) 
 draw(ht2,heatmap_legend_side = "left",annotation_legend_side = "left") 
 dev.off()
 
@@ -217,7 +229,7 @@ DEG_2 <- list_df_shr$BMP9_vs_Mock_shr %>%
   data.frame()%>%
   # add a clor variable in case significant
   mutate(col=ifelse(((padj<0.05)&abs(log2FoldChange)>1),yes = 1,no = 0)) %>%
-  filter(col==1) %>%
+  dplyr::filter(col==1) %>%
   pull(symbol)
 
 # mat_filter <- assay(vds_filter) %>%
@@ -229,24 +241,33 @@ mat_shr <- mat_filter[rownames(vds_filter) %in% DEG_2, ]
 mat2_shr <- (mat_shr - rowMeans(mat_shr))/rowSds(mat_shr)
 #
 
-sample_ordered_shr <- str_extract(colnames(mat2_shr),pattern = "BMP9|mock")
-column_ha_shr <- HeatmapAnnotation(treat = sample_ordered_shr,  
-                               col = list(treat = c("mock" = "green", "BMP9" = "gray"))) 
+sample_ordered_shr <- data.frame(sample = colnames(mat2_shr)) %>%
+  left_join(ddsHTSeq_filter@colData %>%
+              data.frame(),by="sample")
+
+# update the column name of the matrix
+colnames(mat2_shr) <- sample_ordered_shr$sample_name
+
+column_ha_shr <- HeatmapAnnotation(treat = sample_ordered_shr$treat,
+                                   gender = sample_ordered_shr$gender,
+                                   col = list(treat = c("mock" = "gray", "BMP9" = "black"),
+                                              gender = c("M" = "blue", "F" = "pink"))) 
+
 
 ht2_shr <- Heatmap(mat2_shr, 
                name = "exp", 
-               column_title = "BMP9",
+               column_title = "BMP9 shr",
                row_names_gp = gpar(fontsize = 3),
-               top_annotation = column_ha_shr
+               top_annotation = column_ha_shr, show_row_names = F
                # cluster_rows = F, 
                # right_annotation = row_ha, 
                # row_split = rep(c(1,2,3,4),c(2,3,4,7))
 ) 
-pdf("../../out/image/heatmap_BMP9_DEG_shr.pdf",width = 4,height = 15) 
-draw(ht2,heatmap_legend_side = "left",annotation_legend_side = "left") 
+pdf("../../out/plot/heatmap_BMP9_DEG_shr.pdf",width = 4,height = 7) 
+draw(ht2_shr,heatmap_legend_side = "left",annotation_legend_side = "left") 
 dev.off()
 
 # PLOT DISPERSION ---------------------------------------------------------
-pdf("../../out/image/ddsHTSeq_filter_dispersion.pdf",width = 5,height = 5) 
+pdf("../../out/plot/ddsHTSeq_filter_dispersion.pdf",width = 5,height = 5) 
 plotDispEsts(ddsHTSeq_filter)
 dev.off()

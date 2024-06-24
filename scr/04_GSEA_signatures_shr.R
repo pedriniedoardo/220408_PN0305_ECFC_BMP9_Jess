@@ -1,3 +1,6 @@
+# AIM ---------------------------------------------------------------------
+# run GSEA with a targeted set of genes
+
 # library -----------------------------------------------------------------
 library(tidyverse)
 library(fgsea)
@@ -30,10 +33,10 @@ results <- lapply(paste0("../../out/table/",file),function(x){
 # Symbol or Entrez? 
 list_ranks <- lapply(results, function(x){
   
-  x <- filter(x,!is.na(symbol)) %>%
+  x <- dplyr::filter(x,!is.na(symbol)) %>%
     # average logFC in case of duplicated genenames
     group_by(symbol) %>%
-    summarise(logFC = log2FoldChange)
+    summarise(logFC = mean(log2FoldChange))
   
   ranks <- setNames(x$logFC, x$symbol)
   ranks
@@ -75,7 +78,7 @@ ht <- Heatmap(mat_dataset,name = "NES", column_title = "GSEA",
 
 # run this to include P26 vs P08
 # pdf(file = "images/heatmap_NES_targeted2.pdf", width = 7, height = 5)
-pdf(file = "../../out/image/heatmap_NES_targeted_res_BMP9_vs_Mock_shr.pdf", width = 7, height = 7)
+pdf(file = "../../out/plot/heatmap_NES_targeted_res_BMP9_vs_Mock_shr.pdf", width = 7, height = 7)
 draw(ht,heatmap_legend_side = "left",padding = unit(c(2, 2, 2, 70), "mm"))
 dev.off()
 
@@ -98,12 +101,12 @@ plot_pathway <- lapply(unique(df_tables_GSEA_all$pathway),function(x){
 })
 
 wrap_plots(plot_pathway)
-ggsave(filename = "../../out/image/GSEA_plot_profile_BMP9_vs_Mock_shr_nonredundant_TARGETED.pdf",width = 15,height = 5)
+ggsave(filename = "../../out/plot/GSEA_plot_profile_BMP9_vs_Mock_shr_nonredundant_TARGETED.pdf",width = 15,height = 5)
 
 # -------------------------------------------------------------------------
 # plot the heatmap of the leading edges for endo cells
 df_test <- df_tables_GSEA_all %>%
-  filter(dataset == "res_BMP9_vs_Mock_shr")
+  dplyr::filter(dataset == "res_BMP9_vs_Mock_shr")
 
 df_leading_edges <- df_test %>% 
   pull(leadingEdge) %>%
@@ -113,20 +116,30 @@ df_leading_edges <- df_test %>%
 # pull the fold change data, I could pull the level of expression for the pseudobulk but I would have just one sample, therefore the row normalization would just make the plot useless
 # filter the one in the leading edges that are significant
 subset_genes <- results$res_BMP9_vs_Mock_shr %>%
-  filter(symbol %in% df_leading_edges$signature_tip_goveia_2020) %>%
-  filter(padj<0.05,abs(log2FoldChange)>1) %>%
+  dplyr::filter(symbol %in% df_leading_edges$signature_tip_goveia_2020) %>%
+  dplyr::filter(padj<0.05,abs(log2FoldChange)>1) %>%
   pull(symbol)
 
-vds_filter <- readRDS(file = "../../out/object/vds_filter.rds")
+vds_filter <- readRDS(file = "../../out/object/vds_all_filter.rds")
 # gene_id <- rownames(assay(vds_filter)) %in% df_leading_edges$signature_tip_goveia_2020
 gene_id <- rownames(assay(vds_filter)) %in% subset_genes
 mat <- assay(vds_filter)[gene_id, ]
 mat2 <- (mat - rowMeans(mat))/rowSds(mat)
 
 # build the annotation object  
-sample_ordered <- str_extract(colnames(mat2),pattern = c("BMP9|mock"))
-column_ha <- HeatmapAnnotation(treat = sample_ordered,  
-                               col = list(treat = c("mock" = "green", "BMP9" = "gray"))) 
+#
+sample_ordered <- data.frame(sample = colnames(mat2)) %>%
+  left_join(vds_filter@colData %>%
+              data.frame(),by="sample")
+
+# update the column name of the matrix
+colnames(mat2) <- sample_ordered$sample_name
+
+column_ha <- HeatmapAnnotation(treat = sample_ordered$treat,
+                               gender = sample_ordered$gender,
+                               col = list(treat = c("mock" = "gray", "BMP9" = "black"),
+                                          gender = c("M" = "blue", "F" = "pink"))) 
+
 
 # row_ha <- rowAnnotation(class = rep(c("Apoptosis","Senescence","Fibrosis","SASP"),c(2,3,4,7)), 
 #                         col = list(class = c("Apoptosis" = "violet", "Senescence" = "black","Fibrosis" = "yellow","SASP"="brown"))) 
@@ -140,7 +153,7 @@ ht2 <- Heatmap(mat2,
                # row_split = rep(c(1,2,3,4),c(2,3,4,7)),
                column_title = "GOVEIA sig leading edges") 
 
-pdf("../../out/image/heatmap_leadingEdges_goveia_shr.pdf",width = 6,height = 6) 
+pdf("../../out/plot/heatmap_leadingEdges_goveia_shr.pdf",width = 6,height = 6) 
 draw(ht2,heatmap_legend_side = "left",annotation_legend_side = "left") 
 dev.off()
 
@@ -154,15 +167,15 @@ df_rank <- results$res_BMP9_vs_Mock_shr %>%
 # filter the ranks of the gene in the signature
 
 id_UP <- df_rank %>%
-  filter(symbol %in% pathways$HALLMARK_ANGIOGENESIS)
+  dplyr::filter(symbol %in% pathways$HALLMARK_ANGIOGENESIS)
 head(id_UP)
 
 # library(ComplexHeatmap)
-m = matrix(df_rank$rank,ncol = 1)
-ha_up = rowAnnotation(foo = anno_mark(at = id_UP$rank2, labels = id_UP$symbol))
+m <- matrix(df_rank$rank,ncol = 1)
+ha_up <- rowAnnotation(foo = anno_mark(at = id_UP$rank2, labels = id_UP$symbol))
 hm_up <- Heatmap(m, name = "mat", cluster_rows = FALSE, right_annotation = ha_up)
 
-pdf("../../out/image/heatmap_id_HALLMARK_ANGIOGENESIS_BMP9_shr.pdf",width = 4.5,height = 20) 
+pdf("../../out/plot/heatmap_id_HALLMARK_ANGIOGENESIS_BMP9_shr.pdf",width = 3,height = 20) 
 draw(hm_up,heatmap_legend_side = "left",annotation_legend_side = "left") 
 dev.off()
 
@@ -176,14 +189,14 @@ df_rank <- results$res_BMP9_vs_Mock_shr %>%
 # filter the ranks of the gene in the signature
 
 id_UP <- df_rank %>%
-  filter(symbol %in% pathways$GOBP_SPROUTING_ANGIOGENESIS)
+  dplyr::filter(symbol %in% pathways$GOBP_SPROUTING_ANGIOGENESIS)
 head(id_UP)
 
 # library(ComplexHeatmap)
-m = matrix(df_rank$rank,ncol = 1)
-ha_up = rowAnnotation(foo = anno_mark(at = id_UP$rank2, labels = id_UP$symbol))
+m <- matrix(df_rank$rank,ncol = 1)
+ha_up <- rowAnnotation(foo = anno_mark(at = id_UP$rank2, labels = id_UP$symbol))
 hm_up <- Heatmap(m, name = "mat", cluster_rows = FALSE, right_annotation = ha_up)
 
-pdf("../../out/image/heatmap_id_GOBP_SPROUTING_ANGIOGENESIS_BMP9_shr.pdf",width = 4.5,height = 20) 
+pdf("../../out/plot/heatmap_id_GOBP_SPROUTING_ANGIOGENESIS_BMP9_shr.pdf",width = 3,height = 20) 
 draw(hm_up,heatmap_legend_side = "left",annotation_legend_side = "left") 
 dev.off()

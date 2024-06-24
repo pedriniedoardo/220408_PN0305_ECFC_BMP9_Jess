@@ -1,3 +1,6 @@
+# AIM ---------------------------------------------------------------------
+# run GSEA unbiased with REACTOME annotation
+
 # library -----------------------------------------------------------------
 library(tidyverse)
 library(fgsea)
@@ -28,10 +31,10 @@ results <- lapply(paste0("../../out/table/",file),function(x){
 # Symbol or Entrez? 
 list_ranks <- lapply(results, function(x){
   
-  x <- filter(x,!is.na(symbol)) %>%
+  x <- dplyr::filter(x,!is.na(symbol)) %>%
     # average logFC in case of duplicated genenames
     group_by(symbol) %>%
-    summarise(logFC = log2FoldChange)
+    summarise(logFC = mean(log2FoldChange))
   
   ranks <- setNames(x$logFC, x$symbol)
   ranks
@@ -112,7 +115,7 @@ str(list_collapsedPathways)
 
 list_mainPathways <- pmap(list(list_tables_GSEA_all,list_collapsedPathways),function(x,y){
   x %>%
-    filter(pathway %in% y$mainPathways) %>%
+    dplyr::filter(pathway %in% y$mainPathways) %>%
     arrange(padj,-abs(NES)) %>%
     pull(pathway) 
 })
@@ -133,7 +136,7 @@ sum(!names(list_tables_GSEA_all) == names(list_mainPathways))
 df_tables_GSEA_all_non_redundant <- 
   pmap(list(list_tables_GSEA_all,list_mainPathways),function(x,y){
     x %>%
-      filter(pathway %in% y)
+      dplyr::filter(pathway %in% y)
   }) %>%
   bind_rows()
 
@@ -159,7 +162,19 @@ df_tables_GSEA_all_non_redundant %>%
   # mutate(min_log10_padj = -log10(padj)) %>%
   ggplot(aes(y = -log10(padj),x = NES,label = pathway2)) + geom_point(aes(size = size),alpha = 0.2) + facet_wrap(~dataset) + theme_bw() + theme(strip.background = element_blank())+
   geom_text_repel(size = 2,box.padding = 0.5,segment.alpha = 0.6,max.overlaps = 10)
-ggsave("../../out/image/GSEA_unbiased_res_BMP9_vs_Mock_shr_nonredundant_REACTOME.pdf",width = 20,height = 12)
+ggsave("../../out/plot/GSEA_unbiased_res_BMP9_vs_Mock_shr_nonredundant_REACTOME.pdf",width = 10,height = 9)
+
+# library(ggrepel)
+df_tables_GSEA_all %>%
+  # shorten the label of the pathway
+  mutate(pathway2 = str_remove(pathway,pattern = "KEGG_") %>%
+           str_sub(start = 1,end = 35)) %>%
+  # mutate(min_log10_padj = -log10(padj)) %>%
+  ggplot(aes(y = -log10(padj),x = NES,label = pathway2)) + geom_point(aes(size = size),alpha = 0.2) + facet_wrap(~dataset) + theme_bw() +
+  theme(strip.background = element_blank())+
+  geom_text_repel(size = 2,box.padding = 0.5,segment.alpha = 0.6,max.overlaps = 10)
+# geom_hline(yintercept = -log(0.05),col="gray",linetype="dashed")
+ggsave("../../out/plot/GSEA_unbiased_res_BMP9_vs_Mock_shr_REACTOME.pdf",width = 10,height = 9)
 
 # PLOT PROFILE ------------------------------------------------------------ 
 # library("patchwork")

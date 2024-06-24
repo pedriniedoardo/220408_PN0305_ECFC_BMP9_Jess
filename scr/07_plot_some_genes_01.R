@@ -1,10 +1,13 @@
+# AIM ---------------------------------------------------------------------
+# plot some genes
+
 # libraries ---------------------------------------------------------------
 library(tidyverse)
 library(DESeq2)
 library(ComplexHeatmap)
 
 # plot genes with heatmap -------------------------------------------------
-vds_filter <- readRDS(file = "../../out/object/vds_filter.rds")
+vds_filter <- readRDS(file = "../../out/object/vds_all_filter.rds")
 
 # gene_id <- rownames(assay(vds_filter)) %in% c("XIST","DDX3Y","RPS4Y1","USP9Y")
 # gene_id <- rownames(assay(vds_filter)) %in% c("VCAN","CXCL12","ID2","ABI3BP","APLP1","MGP","TIMP3","SPOCK1","THY1","NID2","FBLN5","VEGFA")
@@ -25,13 +28,18 @@ mat2 <- (mat - rowMeans(mat))/rowSds(mat)
 #   pull(symbol) 
 
 # build the annotation object  
-sample_ordered <- str_extract(colnames(mat2),pattern = c("BMP9|mock"))
+#
+sample_ordered <- data.frame(sample = colnames(mat2)) %>%
+  left_join(vds_filter@colData %>%
+              data.frame(),by="sample")
 
-column_ha <- HeatmapAnnotation(treat = sample_ordered,  
-                               col = list(treat = c("mock" = "green", "BMP9" = "gray"))) 
+# update the column name of the matrix
+colnames(mat2) <- sample_ordered$sample_name
 
-# row_ha <- rowAnnotation(class = rep(c("Apoptosis","Senescence","Fibrosis","SASP"),c(2,3,4,7)), 
-#                         col = list(class = c("Apoptosis" = "violet", "Senescence" = "black","Fibrosis" = "yellow","SASP"="brown"))) 
+column_ha <- HeatmapAnnotation(treat = sample_ordered$treat,
+                               gender = sample_ordered$gender,
+                               col = list(treat = c("mock" = "gray", "BMP9" = "black"),
+                                          gender = c("M" = "blue", "F" = "pink")))
 
 ht2 <- Heatmap(mat2, 
                name = "exp",
@@ -42,16 +50,15 @@ ht2 <- Heatmap(mat2,
                # row_split = rep(c(1,2,3,4),c(2,3,4,7)),
                column_title = "GOI") 
 
-pdf("../../out/image/heatmap_GOI.pdf",width = 6,height = 6) 
+pdf("../../out/plot/heatmap_GOI_01.pdf",width = 6,height = 6) 
 draw(ht2,heatmap_legend_side = "left",annotation_legend_side = "left") 
 dev.off()
 
 # plot genes dotplot ------------------------------------------------------
-data <- readRDS("../../out/object/ddsHTSeq_filter.rds")
+data <- readRDS("../../out/object/dds_all_filter_DESeq.rds")
 
-lut <- colData(data) %>%
-  data.frame() %>%
-  rownames_to_column("sample")
+lut <- data@colData %>%
+  data.frame()
 
 # GOI <- c("SMAD1","SMAD9","SMAD6","BMPR1B","SMAD7")
 # GOI <- subset_genes
@@ -72,7 +79,7 @@ MR <- counts(data,normalized=T)%>%
 counts(data,normalized=T)%>%
   data.frame()%>%
   rownames_to_column("symbol") %>%
-  filter(symbol %in% GOI) %>%
+  dplyr::filter(symbol %in% GOI) %>%
   pivot_longer(names_to = "sample",values_to = "count",-symbol) %>%
   # add the milion reads per sample
   left_join(MR,by = "sample") %>%
@@ -83,12 +90,12 @@ counts(data,normalized=T)%>%
   geom_point(position = position_jitter(width = 0.1),alpha=0.6)+facet_wrap(~symbol,scales = "free")+scale_y_log10()+ theme_bw()+
   theme(strip.background = element_blank(), 
         panel.border = element_rect(colour = "black", fill = NA))
-ggsave("../../out/image/boxplot_GOI.pdf",width = 10,height = 10) 
+ggsave("../../out/plot/boxplot_GOI_01.pdf",width = 8,height = 8) 
 
 counts(data,normalized=T)%>%
   data.frame()%>%
   rownames_to_column("symbol") %>%
-  filter(symbol %in% GOI) %>%
+  dplyr::filter(symbol %in% GOI) %>%
   pivot_longer(names_to = "sample",values_to = "count",-symbol) %>%
   # add the milion reads per sample
   left_join(MR,by = "sample") %>%
@@ -99,4 +106,4 @@ counts(data,normalized=T)%>%
   facet_wrap(~symbol,scales = "free")+scale_y_log10()+ theme_bw()+
   theme(strip.background = element_blank(), 
         panel.border = element_rect(colour = "black", fill = NA))
-ggsave("../../out/image/scatterplot_GOI.pdf",width = 11,height = 10)
+ggsave("../../out/plot/scatterplot_GOI_01.pdf",width = 8,height = 8)

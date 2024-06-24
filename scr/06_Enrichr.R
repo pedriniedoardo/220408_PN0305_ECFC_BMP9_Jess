@@ -1,23 +1,27 @@
+# AIM ---------------------------------------------------------------------
+# run EnrichR with a panel of annotations
+
 # libraries ---------------------------------------------------------------
 library(enrichR)
+library(tidyverse)
 
 # DB selection ------------------------------------------------------------
 dbs <- listEnrichrDbs()
 #filter fo the db of interest
 dbs %>%
-  filter(str_detect(libraryName,pattern = "Atlas"))
+  dplyr::filter(str_detect(libraryName,pattern = "Atlas"))
 
 dbs %>%
-  filter(str_detect(libraryName,pattern = "Azim"))
+  dplyr::filter(str_detect(libraryName,pattern = "KEGG"))
 
-dbs_db <- c("KEGG_2021_Human","MSigDB_Hallmark_2020","Reactome_2016","Human_Gene_Atlas","Azimuth_Cell_Types_2021")
+dbs_db <- c("KEGG_2021_Human","MSigDB_Hallmark_2020","Reactome_2022","Human_Gene_Atlas","Azimuth_Cell_Types_2021")
 
 # GENE SELECTION ----------------------------------------------------------
 # save the ranked object, also change the genes into genenames
 full_df <- read_tsv("../../out/table/res_BMP9_vs_Mock_shr.txt")
 
 list_res_tot <- list(BMP9_vs_mock = full_df %>%
-                       filter(padj<0.05,abs(log2FoldChange)>1) %>%
+                       dplyr::filter(padj<0.05,abs(log2FoldChange)>1) %>%
                        pull(symbol))
 
 # query -------------------------------------------------------------------
@@ -46,4 +50,4 @@ df_enrichr_annotation_enriched_tot %>%
                         values = rescale(c(0,1)),
                         limits = c(0,0.2))+theme(strip.background = element_blank())
 # scale_color_gradient(low = "red",high = "blue")
-ggsave("../../out/image/enrichR_out_BMP9_vs_mock_shr_plot.pdf",width = 7,height = 15)
+ggsave("../../out/plot/enrichR_out_BMP9_vs_mock_shr_plot.pdf",width = 7,height = 15)
